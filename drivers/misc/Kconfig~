@@ -663,7 +663,7 @@ config STMPE811_ADC
 
 config TIMA_LOG
 	tristate "Support for dumping TIMA log"
-	default n
+	default y
 	help
 	  This option enables support for dumping TIMA log
 
@@ -706,9 +706,5 @@ config SLP_PROCESS_MON
 	help
 	  Providing monitoring important processes. Users can register the process
 	  with sysfs.
-
-config CPU_UNDERVOLTING
-	tristate "Several undervolting interfaces"
-	default n
 
 endif # MISC_DEVICES
