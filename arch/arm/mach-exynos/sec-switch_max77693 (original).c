@@ -30,6 +30,10 @@
 #endif
 #include <linux/sii9234.h>
 
+#ifdef CONFIG_MHL_PS5101_VE
+#include <linux/ps5101.h>
+#endif
+
 #ifdef CONFIG_USB_HOST_NOTIFY
 #include <linux/host_notify.h>
 #endif
@@ -307,6 +311,8 @@ int max77693_muic_charger_cb(enum cable_type_muic cable_type)
 	struct power_supply *psy = power_supply_get_by_name("battery");
 	union power_supply_propval value;
 #endif
+	static enum cable_type_muic previous_cable_type = CABLE_TYPE_NONE_MUIC;
+	struct power_supply *psy_p = power_supply_get_by_name("ps");
 
 	pr_info("%s: %d\n", __func__, cable_type);
 
@@ -315,6 +321,7 @@ int max77693_muic_charger_cb(enum cable_type_muic cable_type)
 	case CABLE_TYPE_OTG_MUIC:
 	case CABLE_TYPE_JIG_UART_OFF_MUIC:
 	case CABLE_TYPE_MHL_MUIC:
+	case CABLE_TYPE_POWER_SHARING_MUIC:
 		is_cable_attached = false;
 		break;
 	case CABLE_TYPE_USB_MUIC:
@@ -349,6 +356,11 @@ int max77693_muic_charger_cb(enum cable_type_muic cable_type)
 	psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
 #endif
 #endif
+
+	if (previous_cable_type == cable_type) {
+		pr_info("%s : SKIP cable setting\n", __func__);
+		goto skip_cable_setting;
+	}
 
 #ifdef CONFIG_CHARGER_MAX77693_BAT
 	/* charger setting */
@@ -391,26 +403,38 @@ int max77693_muic_charger_cb(enum cable_type_muic cable_type)
 	case CABLE_TYPE_SMARTDOCK_TA_MUIC:
 		current_cable_type = POWER_SUPPLY_TYPE_MISC;
 		break;
+	case CABLE_TYPE_POWER_SHARING_MUIC:
+		current_cable_type = POWER_SUPPLY_TYPE_POWER_SHARING;
+		break;
 	default:
 		pr_err("%s: invalid type for charger:%d\n",
 				__func__, cable_type);
 		goto skip;
 	}
 
-	if (!psy || !psy->set_property) {
+	if (!psy || !psy->set_property || !psy_p || !psy_p->set_property) {
 		pr_err("%s: fail to get battery psy\n", __func__);
 		return 0;
 	} else {
-		value.intval = current_cable_type<<ONLINE_TYPE_MAIN_SHIFT;
-		psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
+		if (current_cable_type == POWER_SUPPLY_TYPE_POWER_SHARING) {
+			value.intval = current_cable_type;
+			psy_p->set_property(psy_p, POWER_SUPPLY_PROP_ONLINE, &value);
+		} else {
+			if (previous_cable_type == CABLE_TYPE_POWER_SHARING_MUIC) {
+				value.intval = current_cable_type;
+				psy_p->set_property(psy_p, POWER_SUPPLY_PROP_ONLINE, &value);
+			}
+			value.intval = current_cable_type<<ONLINE_TYPE_MAIN_SHIFT;
+			psy->set_property(psy, POWER_SUPPLY_PROP_ONLINE, &value);
+		}
 	}
-
 skip:
 #endif
-
+	previous_cable_type = cable_type;
+skip_cable_setting:
 #if defined(CONFIG_MACH_SLP_NAPLES) \
 	|| defined(CONFIG_MACH_MIDAS) \
- 	|| defined(CONFIG_MACH_GC1) \
+	|| defined(CONFIG_MACH_GC1) \
 	|| defined(CONFIG_MACH_T0) \
 	|| defined(CONFIG_MACH_GD2)
 
@@ -431,25 +455,59 @@ skip:
 /*extern void MHL_On(bool on);*/
 void max77693_muic_mhl_cb(int attached)
 {
+#ifdef	CONFIG_MHL_PS5101_VE
+	int ret, isSii9234=0;
+	isSii9234 = sii9234_checkActive(); // VE_GROUP
+	pr_info("isSii9234 :%d\n", isSii9234);
+#endif
+	
 	pr_info("MUIC attached:%d\n", attached);
 	if (attached == MAX77693_MUIC_ATTACHED) {
 		/*MHL_On(1);*/ /* GPIO_LEVEL_HIGH */
 		pr_info("MHL Attached !!\n");
 #ifdef CONFIG_SAMSUNG_MHL
+
+#ifdef	CONFIG_MHL_PS5101_VE
+		if(isSii9234 == true) //sii9234
+#endif
+		{
 #ifdef CONFIG_MACH_MIDAS
-		sii9234_wake_lock();
+			sii9234_wake_lock();
 #endif
-		mhl_onoff_ex(1);
+			ret = mhl_onoff_ex(1);
+			pr_info("mhl_onoff_ex()  ret = %d\n", ret);
+		}
+#ifdef	CONFIG_MHL_PS5101_VE
+		else  //ps5101
+		{
+			ret = ps5101_mhl_onoff_ex(1);
+			pr_info("ps5101_mhl_onoff_ex()  ret = %d\n", ret);
+		}
 #endif
+#endif
+
 	} else {
 		/*MHL_On(0);*/ /* GPIO_LEVEL_LOW */
 		pr_info("MHL Detached !!\n");
 #ifdef CONFIG_SAMSUNG_MHL
-		mhl_onoff_ex(false);
+#ifdef	CONFIG_MHL_PS5101_VE
+		if(isSii9234 == true) //sii9234
+#endif
+		{
+			mhl_onoff_ex(false);
 #ifdef CONFIG_MACH_MIDAS
-		sii9234_wake_unlock();
+			sii9234_wake_unlock();
+#endif
+		}
+#ifdef	CONFIG_MHL_PS5101_VE
+		else
+		{
+			ps5101_mhl_onoff_ex(false);
+		}
 #endif
 #endif
+
+
 	}
 }
 

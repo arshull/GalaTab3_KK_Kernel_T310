@@ -1014,7 +1014,6 @@ static void exynos4x12_set_frequency(unsigned int old_index,
 		else
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_130V);
 	}
-#endif
 }
 
 /* Get maximum cpufreq index of chip */
